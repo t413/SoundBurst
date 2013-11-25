@@ -24,7 +24,7 @@ void setup() {
 
 void loop() {
   beats[1].debug = 1;
-  int16_t intensity = 0;
+  uint8_t intensity = 0;
   int16_t dominantRhythmFq = 0, mainPeriod = 0;
   int8_t baseColor = 0;
 
@@ -54,39 +54,45 @@ void loop() {
       if (beats[i].beat_quality > bestBeatQl) { bestBeatFq = i; bestBeatQl = beats[i].beat_quality; }
     }
     lowBeats.beatDetect(lowMag, current);
-    intensity = constrain(intensity + (totalf - intensity) >> 2, 0, 255);
+    intensity = constrain((int16_t) intensity + (totalf - intensity) >> 3, 0, 100);
     dominantRhythmFq += (bestBeatFq - dominantRhythmFq) >> 2;
-    mainPeriod = constrain((mainPeriod + (lowBeats.beat - mainPeriod) >> 4), 1000, 6000);
+    mainPeriod = constrain((mainPeriod + (lowBeats.beat - mainPeriod) >> 4), 500, 6000);
 
     if (intensity < 1) { baseColor = random(0,255); }
 
-    uint16_t rainbow_cycle = current % mainPeriod;
-    uint8_t r_cycle = ((current >> 2) % 255);
-    for (uint8_t r = 0; r < 3; r++) { //each radial magnitude
-      int16_t slowSine = 30*sin((float)(rainbow_cycle*2*PI)/((float)mainPeriod) + (r<<1));
-      uint8_t qfactor = constrain(lowBeats.beat_quality >> 1, 0, 4);
-      slowSine = (slowSine * 4) / qfactor;
-      for (uint8_t b = 0; b < 6; b++) { //each branch
-        int8_t rsine = 30*sin((float)(r_cycle*2*PI)/(255.0f) + (b<<1));
-        rsine = (rsine * 4) / (4 - qfactor);
-        uint32_t c = Wheel(baseColor + (dominantRhythmFq >> 2) + slowSine + rsine);
-        //if (r == 3 && beatcount > 10) c = 0xFFFFFF;
-        uint8_t led = radialLed(b,r);
-        strip.setPixelColor(led, dim(c, intensity));
-        //strip.setPixelColor(i, dim(Wheel(200 + dominantRhythmFq), constrain(intensity, 0, 255)));
-        // uint32_t color = (beats[i].beat_quality > 5)? Wheel(beats[i].beat % 255) : Wheel(200);
-        // strip.setPixelColor(i, dim(color, (beats[i].fvalue)));
-      }
-    }
-    strip.show(); // Initialize all pixels to 'off'
+    colorRadialArray(current, beats, &lowBeats, intensity, dominantRhythmFq, mainPeriod, baseColor);
   }
 }
 
+void colorRadialArray(uint32_t current, BeatDetector* beats, BeatDetector* lowBeats,
+      uint8_t intensity, int16_t dominantRhythmFq, int16_t mainPeriod, int8_t baseColor) {
+
+  uint8_t qfactor = constrain(lowBeats->beat_quality / 2, 0, 4); //beat quality factor
+
+  int8_t rotational_offset[6] = {0};
+  uint8_t r_cycle = ((current >> 2) % 255);
+  for (uint8_t b = 0; b < 6; b++) { //each branch color offset
+    rotational_offset[b] = 30 * sin((float)(r_cycle*2*PI)/255.0f + (b * 2));
+    // = (roffset * 4) / (4 - qfactor); //scale down inverse of qfactor
+  }
+
+  uint16_t radial_cycle = current % mainPeriod;
+  for (uint8_t r = 0; r < 3; r++) { //each radial magnitude
+    int16_t radial_offset = 30 * sin((float)(radial_cycle*2*PI)/((float)mainPeriod) + (r * 2));
+    for (uint8_t b = 0; b < 6; b++) { //each branch
+      uint16_t pixelOffset = (radial_offset * qfactor + rotational_offset[b] * (4 - qfactor)) / 4;
+      uint32_t c = Wheel(baseColor + (dominantRhythmFq >> 2) + pixelOffset);
+      strip.setPixelColor(radialLed(b,r), dim(c, constrain(intensity * 2, 0, 255)));
+    }
+  }
+  strip.show();
+}
 
 uint8_t radialLed(uint8_t branch, uint8_t pos) {
   uint8_t base = (branch < 3)? (branch * 6) : ((branch - 3) * 6 + 3);
   return (branch < 3)? ((base + 3 - 1) - pos) : (base + pos);
 }
+
 
 
 
